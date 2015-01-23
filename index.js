@@ -34,30 +34,29 @@ var MSBuildReporter = function(baseReporterDecorator) {
   this.SUITE_START   = 'testSuiteStarted name=\'%s\'';
   this.SUITE_END     = 'testSuiteFinished name=\'%s\'';
   this.TEST_START    = 'testStarted name=\'%s\'';
-  this.TEST_FAILED   = 'ERROR: testFailed name=\'%s\' message=\'FAILED\' details=\'%s\'';
+  this.TEST_FAILED   = '%s: error: Test \'%s\' Failed: %s';
   this.TEST_END      = 'testFinished name=\'%s\' duration=\'%s\'';
   this.BROWSER_START = 'browserStart name=\'%s\'';
-  this.BROWSER_END   = 'browserEnd name=\'%s\'';
+  this.BROWSER_END = 'browserEnd name=\'%s\'';
+  this.REG_LINENUMBER = /\?([0-9a-z]+?)\:(\d+)$/;
 
-  this.onRunStart = function(browsers) {
-      var self = this;
-    this.browserResults = {};
-    browsers.forEach(function(browser) {
-      self.browserResults[browser.id] = {
-        name: browser.name,
-        log : [],
-        lastSuite : null
-      };
-    });
-  };
-
-  this.onBrowserStart = function (browser) {
-      var self = this;
-      self.browserResults[browser.id] = {
+  var reporter = this;
+  var initializeBrowser = function (browser) {
+      reporter.browserResults[browser.id] = {
           name: browser.name,
           log: [],
           lastSuite: null
       };
+  };
+
+  this.onRunStart = function (browsers) {
+      this.browserResults = {};
+      // Support Karma 0.10 (TODO: remove)
+      browsers.forEach(initializeBrowser);
+  };
+
+  this.onBrowserStart = function (browser) {
+      initializeBrowser(browser);
   };
 
   this.specSuccess = function(browser, result) {
@@ -71,10 +70,32 @@ var MSBuildReporter = function(baseReporterDecorator) {
   this.specFailure = function(browser, result) {
     var log = this.getLog(browser, result);
     var testName = result.description;
+    var self = this;
 
     log.push(formatMessage(this.TEST_START, testName));
-    log.push(formatMessage(this.TEST_FAILED, testName, JSON.stringify(result.log)));
+
+    console.log(result);
+    result.log.forEach(function (item) {
+        console.log(self.formatErrorMessageForTest(item, testName));
+    });
+
+    //log.push(formatMessage(this.TEST_FAILED, testName, result.log.join("\\n").replace(/\n/g, '$(NewLine)')));
     log.push(formatMessage(this.TEST_END, testName, result.time));
+  };
+
+  this.formatErrorMessageForTest = function (message, testName) {
+      var cleanedMessage = message.replace(/\\n/g, '');
+      var messageInfo = cleanedMessage.split(' at ');
+      return formatMessage(this.TEST_FAILED, this.extractFileAndLinenumber(messageInfo[1]), testName, messageInfo[0].replace(/\n/g, '').trim());
+  };
+
+  this.extractFileAndLinenumber = function (message) {
+      var path = message.indexOf('absolute') > -1 ? message.split('absolute')[1] : message;
+      var lineNumMatch = this.REG_LINENUMBER.exec(path);
+
+      if (lineNumMatch) {
+          return path.replace(lineNumMatch[0], '') + ' ' + '(' + lineNumMatch[2] + ')';
+      }
   };
 
   this.specSkipped = function(browser, result) {
